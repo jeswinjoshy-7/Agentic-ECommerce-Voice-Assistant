@@ -1,6 +1,7 @@
 # Neural Voice: A Full-Stack Empathetic Conversational Agentic AI Platform
 
-<img width="251" height="381" alt="Screenshot from 2025-10-07 01-59-42" src="https://github.com/user-attachments/assets/4b7862ec-75da-401f-8c8d-b6516c1368cf" />
+
+<img width="251" height="381" alt="Screenshot from 2025-10-07 02-17-49" src="https://github.com/user-attachments/assets/3e270230-ace0-4bf1-ad7c-121c908cad06" />
 
 
 
