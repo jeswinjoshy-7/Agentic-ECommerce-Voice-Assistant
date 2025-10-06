@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Neural Voice</title>
+  <style>
+    body { background: #ecf2fc; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; }
+    .chat-card {
+      max-width: 500px;
+      margin: 40px auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(40,40,80,0.11);
+      display: flex;
+      flex-direction: column;
+      min-height: 600px;
+      overflow: hidden;
+    }
+    .chat-header {
+      background: #273c75;
+      color: #fff;
+      padding: 17px 22px;
+      border-radius: 12px 12px 0 0;
+      font-size: 1.21em;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    .chat-body {
+      flex: 1;
+      background: #f7fafd;
+      padding: 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+      overflow-y: auto;
+    }
+    .msg { max-width: 74%; padding: 11px 16px; border-radius: 12px;
+      font-size: 1em; display: inline-block; word-break: break-word;
+      box-shadow: 0 1.5px 6px #eaeaea41; }
+    .msg.user {
+      background: linear-gradient(135deg, #bee9c7 80%, #b2dfdb 100%);
+      color: #014511; align-self: flex-end; text-align: right;
+    }
+    .msg.agent {
+      background: linear-gradient(135deg, #ffe082 80%, #ffecb3 100%);
+      color: #6d5017; align-self: flex-start; text-align: left;
+    }
+    .chat-footer { padding: 16px; display: flex; gap: 10px; border-top: 1px solid #eee; background: #fff; }
+    .chat-footer textarea {
+      flex: 1; border-radius: 7px; border: 1.5px solid #dadada;
+      resize: none; min-height: 38px; font-size: 1em; padding: 8px 12px; background: #fafbff;
+    }
+    .chat-footer button {
+      padding: 10px 17px; border-radius: 7px; border: none;
+      background: #273c75; color: #fff; font-weight: 600; font-size: 1em; cursor: pointer;
+      transition: background 0.18s;
+    }
+    .chat-footer button:disabled { background: #d7daea; color: #888; cursor: default; }
+    .voice-btn { background: #ffd54f; color: #725600; font-weight: bold; margin-left: 0; }
+    .loading-indicator {
+      color: #273c75; font-size: 1em; padding-left: 2px; font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-card">
+    <div class="chat-header">Natalie Voice Assistant</div>
+    <div class="chat-body" id="chat-body">
+      <div class="msg agent">Start the conversation…</div>
+    </div>
+    <div class="chat-footer">
+      <textarea id="msg-inp" placeholder="Type your message..."></textarea>
+      <button id="send-btn" title="Send">Send</button>
+      <button class="voice-btn" id="voice-btn" title="Hold to record">Record</button>
+    </div>
+  </div>
+  <script>
+    const BASE_URL = "http://localhost:8000";
+    const body = document.getElementById("chat-body");
+    const inp = document.getElementById("msg-inp");
+    const sendBtn = document.getElementById("send-btn");
+    const voiceBtn = document.getElementById("voice-btn");
+    let loadingMsg = null;
+
+    function addMsg(txt, who) {
+      const div = document.createElement("div");
+      div.className = "msg " + who;
+      div.textContent = txt;
+      body.appendChild(div);
+      body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+      return div;
+    }
+    function addLoading() {
+      loadingMsg = document.createElement("span");
+      loadingMsg.className = "loading-indicator";
+      loadingMsg.textContent = "Natalie is thinking…";
+      body.appendChild(loadingMsg);
+      body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+    }
+    function removeLoading() {
+      if (loadingMsg) loadingMsg.remove();
+      loadingMsg = null;
+    }
+
+    // --- TEXT INPUT LOGIC (Unchanged) ---
+    sendBtn.onclick = async function () {
+      const text = inp.value.trim();
+      if (!text) return;
+      addMsg(text, "user");
+      inp.value = "";
+      addLoading();
+      try {
+        const response = await fetch(`${BASE_URL}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await response.json();
+        removeLoading();
+        if (data && data.response_text)
+          addMsg(data.response_text, "agent");
+        if (data && data.audio_url) {
+          const audio = new Audio(data.audio_url);
+          audio.play();
+        }
+      } catch (e) {
+        removeLoading();
+        addMsg("[Error connecting to server]", "agent");
+      }
+    };
+    inp.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendBtn.onclick();
+      }
+    });
+
+    // --- VOICE INPUT LOGIC (Updated and Simplified) ---
+    let mediaRecorder = null;
+    let recordingChunks = [];
+
+    voiceBtn.onmousedown = async () => {
+      recordingChunks = [];
+      if (!navigator.mediaDevices || !window.MediaRecorder) {
+        addMsg("[Voice recording not supported]", "agent");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordingChunks.push(e.data); };
+        
+        mediaRecorder.onstop = async () => {
+          if (recordingChunks.length === 0) {
+            addMsg("[No audio recorded]", "agent");
+            return;
+          }
+          const audioBlob = new Blob(recordingChunks, { type: "audio/webm" });
+          const formData = new FormData();
+          formData.append("audio_file", audioBlob, "recording.webm");
+          
+          addMsg("[You sent a voice message]", "user");
+          addLoading();
+          
+          try {
+            // SINGLE API CALL: /process_speech now handles everything (transcription, agent logic, TTS)
+            // and returns the final response directly.
+            const response = await fetch(`${BASE_URL}/process_speech`, { 
+              method: "POST", 
+              body: formData 
+            });
+
+            removeLoading();
+            const data = await response.json();
+
+            if (response.ok) {
+              // The response object is now the same as the /chat endpoint
+              if (data && data.response_text) {
+                  addMsg(data.response_text, "agent");
+              }
+              if (data && data.audio_url) {
+                  const audio = new Audio(data.audio_url);
+                  audio.play();
+              }
+            } else {
+              // Handle API errors gracefully (e.g., audio couldn't be understood)
+              const errorMsg = data.detail || "[Speech recognition failed]";
+              addMsg(errorMsg, "agent");
+            }
+          } catch (err) {
+            removeLoading();
+            addMsg("[Error processing voice message]", "agent");
+          }
+        };
+        
+        mediaRecorder.start();
+        voiceBtn.textContent = "Recording...";
+      } catch (err) {
+        addMsg("[Microphone access denied]", "agent");
+      }
+    };
+    
+    voiceBtn.onmouseup = () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        voiceBtn.textContent = "Record";
+      }
+    };
+  </script>
+</body>
+</html>
